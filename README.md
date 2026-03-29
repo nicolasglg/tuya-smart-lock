@@ -3,7 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange?style=flat-square)](https://hacs.xyz/)
 [![GitHub Release](https://img.shields.io/github/v/release/nicolasglg/tuya-smart-lock?style=flat-square)](https://github.com/nicolasglg/tuya-smart-lock/releases)
 [![License](https://img.shields.io/github/license/nicolasglg/tuya-smart-lock?style=flat-square)](LICENSE)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/nicolasglg)
+[![Buy Me A Beer](https://img.shields.io/badge/Buy%20Me%20A%20Beer-support-yellow?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/nicolasglg)
 
 **Control your Tuya smart lock directly from Home Assistant.**
 
@@ -77,7 +77,7 @@ Both services are free for personal use. They may require periodic renewal (ever
 4. Search for and install **Tuya Smart Lock**
 5. Restart Home Assistant
 6. Go to **Settings** > **Integrations** > **Add Integration** > search for **Tuya Smart Lock**
-7. Want to make my day? Buy me a beer or a coffee :) [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/nicolasglg)
+7. Want to make my day? Buy me a beer :) [![Buy Me A Beer](https://img.shields.io/badge/Buy%20Me%20A%20Beer-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/nicolasglg)
 
 ### Manual
 
@@ -138,7 +138,7 @@ If your lock device uses the Tuya ticket-based unlock flow, it should work. If i
 
 If this integration is useful to you, consider buying me a coffee!
 
-[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/nicolasglg)
+[![Buy Me A Beer](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/nicolasglg)
 
 ## License
 
