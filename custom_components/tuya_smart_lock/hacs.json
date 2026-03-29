@@ -1,0 +1,5 @@
+{
+  "name": "Tuya Smart Lock",
+  "homeassistant": "2024.1.0",
+  "render_readme": true
+}

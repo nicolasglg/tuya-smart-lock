@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tuya Cloud Credentials",
+        "description": "Enter your Tuya IoT Platform credentials.\n\nYou need an active **IoT Core** and **Smart Lock Open Service** subscription on [iot.tuya.com](https://iot.tuya.com).",
+        "data": {
+          "access_id": "Access ID",
+          "access_secret": "Access Secret",
+          "api_region": "API Region"
+        }
+      },
+      "select_device": {
+        "title": "Select Lock Device",
+        "description": "Choose the lock device you want to control from Home Assistant.",
+        "data": {
+          "device_id": "Device"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials. Check your Access ID and Access Secret on iot.tuya.com.",
+      "cannot_connect": "Cannot connect to Tuya Cloud API. Check your network and region.",
+      "remote_unlock_disabled": "Remote unlock is not enabled on this device. Enable it in the Tuya or Smart Life app first."
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "no_devices_found": "No lock devices found. Make sure your Smart Life / Tuya app account is linked to your IoT project and your device is a supported lock category."
+    }
+  }
+}

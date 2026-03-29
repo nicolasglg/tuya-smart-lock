@@ -1,0 +1,11 @@
+{
+  "domain": "tuya_smart_lock",
+  "name": "Tuya Smart Lock",
+  "codeowners": ["@nicolasglg"],
+  "config_flow": true,
+  "documentation": "https://github.com/nicolasglg/tuya-smart-lock",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/nicolasglg/tuya-smart-lock/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
