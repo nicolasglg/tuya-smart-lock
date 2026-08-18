@@ -4,8 +4,8 @@
   "codeowners": ["@nicolasglg"],
   "config_flow": true,
   "documentation": "https://github.com/nicolasglg/tuya-smart-lock",
-  "iot_class": "cloud_polling",
+  "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/nicolasglg/tuya-smart-lock/issues",
-  "requirements": [],
+  "requirements": ["websockets"],
   "version": "1.0.0"
 }
