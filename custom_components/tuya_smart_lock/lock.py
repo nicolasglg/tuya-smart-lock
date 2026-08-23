@@ -1,17 +1,20 @@
 """Lock entity for Tuya Smart Lock."""
 
 import logging
+from datetime import timedelta
 
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 
 from .const import CONF_DEVICE_ID, CONF_DEVICE_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_AUTO_LOCK_DELAY = 3
+SCAN_INTERVAL = timedelta(seconds=20)
 
 
 async def async_setup_entry(
@@ -39,7 +42,7 @@ class TuyaSmartLock(LockEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
-    _attr_should_poll = False
+    _attr_should_poll = True
 
     def __init__(self, api, device_id: str, device_name: str, auto_lock_time: int) -> None:
         self._api = api
@@ -59,6 +62,17 @@ class TuyaSmartLock(LockEntity):
             "name": self._device_name,
             "manufacturer": "Tuya",
         }
+
+    async def async_update(self) -> None:
+        """Refresh the real lock state from the device."""
+        state = await self._api.async_get_lock_state(self._device_id)
+        if state is None:
+            _LOGGER.warning(
+                "Could not refresh lock state for %s; keeping last known state",
+                self._device_id,
+            )
+            return
+        self._attr_is_locked = not state
 
     async def async_lock(self, **kwargs) -> None:
         """Lock the door."""
@@ -85,12 +99,13 @@ class TuyaSmartLock(LockEntity):
         self.async_write_ha_state()
 
         if success:
-            # Re-lock after auto_lock_time + 1s buffer
+            # Verify the real state after the device's auto-lock window instead
+            # of assuming it relocked itself.
             delay = self._auto_lock_time + 1
-            self.hass.loop.call_later(delay, self._set_locked)
+            async_call_later(self.hass, delay, self._async_verify_after_auto_lock)
 
-    def _set_locked(self) -> None:
-        """Reset state to locked after auto-lock delay."""
-        self._attr_is_locked = True
+    async def _async_verify_after_auto_lock(self, _now) -> None:
+        """Check the actual device state after the auto-lock window elapses."""
+        await self.async_update()
         self.async_write_ha_state()
 
