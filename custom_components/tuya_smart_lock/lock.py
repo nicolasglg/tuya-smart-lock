@@ -154,22 +154,50 @@ class TuyaSmartLock(LockEntity):
             self.async_write_ha_state()
             return
 
-        unlocked = None
+        # Two signals can appear in the SAME message: `lock_motor_state` (the
+        # motor's raw position) and an `unlock_*` datapoint (the fact that an
+        # unlock just happened). The lock's own auto-relock can fire fast
+        # enough that Tuya bundles both into one push -- fingerprint-unlock
+        # immediately followed by the already-relocked motor position. A plain
+        # last-write-wins loop over `status` let whichever datapoint happened
+        # to be listed second silently decide the outcome, which meant a real
+        # unlock could be reported and then erased within the same message,
+        # producing NO visible state change at all. Root-caused 2026-08-24: an
+        # unlock was confirmed reaching this handler (last_unlock_method was
+        # set) while the lock's `state` never left "locked", which is exactly
+        # this failure. It broke any automation that depends on this entity
+        # transitioning to "unlocked" -- a transition that was silently never
+        # happening.
+        #
+        # Fix: track both signals independently across the whole loop, then
+        # apply UNLOCK_EVENT_PREFIX as authoritative over lock_motor_state
+        # when both are present -- exactly the intent already documented on
+        # UNLOCK_EVENT_PREFIX in const.py, which this loop did not actually
+        # implement. The physical motor may already be relocked by the time
+        # we're told about the unlock; that's fine, we still want anything
+        # watching this entity to see that an unlock genuinely happened, even
+        # if briefly.
+        unlock_method = None
+        motor_unlocked = None
         for datapoint in status:
             code = datapoint.get("code", "")
             value = datapoint.get("value")
 
             if code == "lock_motor_state":
                 # True == motor retracted == unlocked
-                unlocked = bool(value)
+                motor_unlocked = bool(value)
             elif code.startswith(UNLOCK_EVENT_PREFIX):
                 # unlock_fingerprint / unlock_password / unlock_card / ...
                 # The value identifies *who*; its presence is the event.
                 _LOGGER.debug("Lock %s opened via %s", self._device_id, code)
-                self._last_unlock_method = code
-                unlocked = True
+                unlock_method = code
 
-        if unlocked is None:
+        if unlock_method is not None:
+            self._last_unlock_method = unlock_method
+            unlocked = True
+        elif motor_unlocked is not None:
+            unlocked = motor_unlocked
+        else:
             self.async_write_ha_state()
             return
 

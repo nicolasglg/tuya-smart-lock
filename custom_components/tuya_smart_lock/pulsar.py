@@ -57,10 +57,27 @@ from .const import PULSAR_TOPIC_ENV, PULSAR_WS_ENDPOINTS, PULSAR_WS_QUERY
 _LOGGER = logging.getLogger(__name__)
 
 RECONNECT_MIN_SECONDS = 5
-RECONNECT_MAX_SECONDS = 300
+# Was 300s. This is a front door, not a background sync job -- five minutes of
+# silent downtime after a disconnect is too slow. See IDLE_TIMEOUT_SECONDS
+# below for why disconnects can now also be detected (and recovered from)
+# much sooner than they used to be.
+RECONNECT_MAX_SECONDS = 60
 PING_INTERVAL_SECONDS = 30
 PING_TIMEOUT_SECONDS = 10
 OPEN_TIMEOUT_SECONDS = 20
+# `websockets`' own ping/pong (PING_INTERVAL/TIMEOUT_SECONDS above) only
+# proves the TRANSPORT is alive; it says nothing about whether Tuya's
+# application is actually delivering anything over it. Observed 2026-08-24:
+# this connection sat reporting `connected=True` while genuinely delivering
+# zero application frames for 30+ minutes -- ping/pong never caught it,
+# because pings were still succeeding at the protocol level the whole time.
+# This is a second, independent watchdog: if no application frame (not just
+# no pong) arrives within this window, force a reconnect rather than trusting
+# a connection that has gone this quiet. Generous enough that a genuinely
+# idle Tuya account (no device on the account did anything) shouldn't trip
+# it under normal use, per traffic observed on a real account (roughly one
+# frame every 10-60s whenever anything was actually happening).
+IDLE_TIMEOUT_SECONDS = 300
 
 
 def _md5_hex(value: str) -> str:
@@ -197,7 +214,23 @@ class TuyaPulsarClient:
             self.last_error = None
             self._set_connected(True)
 
-            async for raw in socket:
+            while True:
+                try:
+                    raw = await asyncio.wait_for(
+                        socket.recv(), timeout=IDLE_TIMEOUT_SECONDS
+                    )
+                # asyncio.TimeoutError and the builtin TimeoutError are only
+                # the same class from Python 3.11 on; catch the asyncio one
+                # explicitly so this doesn't depend on which Python HA
+                # happens to be running.
+                except asyncio.TimeoutError as err:
+                    # See IDLE_TIMEOUT_SECONDS: ping/pong alone doesn't catch
+                    # this. Force the same reconnect path as any other drop.
+                    raise ConnectionError(
+                        f"no Tuya Pulsar frame in {IDLE_TIMEOUT_SECONDS}s "
+                        "(idle timeout -- connection was alive but silent)"
+                    ) from err
+
                 if isinstance(raw, (bytes, bytearray)):
                     raw = raw.decode("utf-8", "replace")
                 message_id = self._handle_frame(raw)
