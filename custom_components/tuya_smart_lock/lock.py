@@ -1,7 +1,7 @@
 """Lock entity for Tuya Smart Lock."""
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +17,7 @@ from .const import (
     SIGNAL_PULSAR_MESSAGE,
     SIGNAL_PULSAR_STATUS,
     UNLOCK_EVENT_PREFIX,
+    UNLOCK_EVENT_STALE_THRESHOLD_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ class TuyaSmartLock(LockEntity):
         self._relock_timer = None
         self._pulsar = pulsar
         self._last_unlock_method: str | None = None
+        self._last_unlock_age_seconds: float | None = None
+        self._last_unlock_was_stale: bool | None = None
 
     @property
     def extra_state_attributes(self):
@@ -97,6 +100,8 @@ class TuyaSmartLock(LockEntity):
             "push_last_frame": self._pulsar.last_frame_preview,
             "push_connect_attempts": self._pulsar.connect_attempts,
             "last_unlock_method": self._last_unlock_method,
+            "last_unlock_age_seconds": self._last_unlock_age_seconds,
+            "last_unlock_was_stale": self._last_unlock_was_stale,
         }
 
     @property
@@ -177,8 +182,25 @@ class TuyaSmartLock(LockEntity):
         # we're told about the unlock; that's fine, we still want anything
         # watching this entity to see that an unlock genuinely happened, even
         # if briefly.
+        #
+        # Second issue: many of these locks are battery-saving BLE peripherals
+        # that disconnect when idle (see button.py's warm-link helper), so an
+        # unlock_* datapoint can arrive long after it actually happened -- it
+        # sat in the lock's local buffer until something forced a reconnect
+        # and flushed it. Each datapoint carries its own `t` (epoch ms);
+        # comparing that against wall-clock receipt time is how a live touch
+        # is told apart from a replayed backlog event. Only a *fresh*
+        # unlock_* is allowed to flip this entity to "unlocked" -- a stale one
+        # still updates last_unlock_method for an honest history, but falls
+        # back to trusting lock_motor_state (the device's actual current
+        # position) instead of reporting a live unlock for something that's
+        # already over. This matters most for any downstream automation that
+        # triggers on this entity reaching "unlocked".
         unlock_method = None
+        unlock_is_fresh = False
+        unlock_age_seconds: float | None = None
         motor_unlocked = None
+        now_ms = datetime.now(timezone.utc).timestamp() * 1000
         for datapoint in status:
             code = datapoint.get("code", "")
             value = datapoint.get("value")
@@ -191,10 +213,39 @@ class TuyaSmartLock(LockEntity):
                 # The value identifies *who*; its presence is the event.
                 _LOGGER.debug("Lock %s opened via %s", self._device_id, code)
                 unlock_method = code
+                event_t = datapoint.get("t")
+                if event_t is None:
+                    # No timestamp on this datapoint at all -- can't verify
+                    # freshness, so fail open (preserve prior behavior) rather
+                    # than silently dropping a real unlock we have no way to
+                    # judge.
+                    unlock_is_fresh = True
+                else:
+                    unlock_age_seconds = (now_ms - event_t) / 1000
+                    unlock_is_fresh = (
+                        unlock_age_seconds <= UNLOCK_EVENT_STALE_THRESHOLD_SECONDS
+                    )
+                    if not unlock_is_fresh:
+                        _LOGGER.warning(
+                            "Lock %s: %s is %.0fs old (>%ds threshold) -- "
+                            "treating as stale, not reporting a live unlock",
+                            self._device_id,
+                            code,
+                            unlock_age_seconds,
+                            UNLOCK_EVENT_STALE_THRESHOLD_SECONDS,
+                        )
 
         if unlock_method is not None:
             self._last_unlock_method = unlock_method
-            unlocked = True
+            self._last_unlock_age_seconds = unlock_age_seconds
+            self._last_unlock_was_stale = not unlock_is_fresh
+            if unlock_is_fresh:
+                unlocked = True
+            elif motor_unlocked is not None:
+                unlocked = motor_unlocked
+            else:
+                self.async_write_ha_state()
+                return
         elif motor_unlocked is not None:
             unlocked = motor_unlocked
         else:
