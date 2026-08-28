@@ -10,6 +10,7 @@ import aiohttp
 
 from .const import (
     API_REGIONS,
+    COMMANDS_ENDPOINT,
     DOOR_OPERATE_ENDPOINT,
     LOCK_CATEGORIES,
     REMOTE_UNLOCKS_ENDPOINT,
@@ -233,3 +234,31 @@ class TuyaCloudApi:
                 return dp["value"]
 
         return None
+
+    async def async_get_dp(self, device_id: str, code: str):
+        """Read a single datapoint's current value. Returns None on error."""
+        path = STATUS_ENDPOINT.format(device_id=device_id)
+        resp = await self._request("GET", path)
+
+        if not resp.get("success"):
+            _LOGGER.error("Failed to get status: %s", resp.get("msg"))
+            return None
+
+        for dp in resp.get("result", []):
+            if dp["code"] == code:
+                return dp["value"]
+
+        return None
+
+    async def async_send_command(self, device_id: str, code: str, value) -> bool:
+        """Write a datapoint. Used to force the gateway to open a BLE link."""
+        path = COMMANDS_ENDPOINT.format(device_id=device_id)
+        resp = await self._request(
+            "POST", path, {"commands": [{"code": code, "value": value}]}
+        )
+
+        if not resp.get("success"):
+            _LOGGER.error("Command %s=%s failed: %s", code, value, resp.get("msg"))
+            return False
+
+        return True
