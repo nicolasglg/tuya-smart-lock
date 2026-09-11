@@ -123,16 +123,38 @@ class TuyaCloudApi:
         """Discover lock devices linked to this account."""
         await self._ensure_token()
 
-        # Use the associated-users endpoint which lists all devices linked via the app
-        resp = await self._request("GET", "/v1.0/iot-01/associated-users/devices")
+        # Use the associated-users endpoint which lists all devices linked via the app.
+        # It returns 20 devices per page by default, so on accounts with more devices
+        # the locks can fall outside the first page and never be discovered. Ask for
+        # the largest page and follow last_row_key until the account is exhausted.
+        # Query params have to stay alphabetically sorted or the signature is rejected.
+        all_devices = []
+        last_row_key = None
 
-        if not resp.get("success"):
-            _LOGGER.error("Failed to list devices: %s", resp.get("msg"))
-            return []
+        while True:
+            path = "/v1.0/iot-01/associated-users/devices?"
+            if last_row_key:
+                path += f"last_row_key={last_row_key}&"
+            path += "size=100"
 
-        # Response structure: result.devices (list)
-        result = resp.get("result", {})
-        all_devices = result.get("devices", result) if isinstance(result, dict) else result
+            resp = await self._request("GET", path)
+
+            if not resp.get("success"):
+                _LOGGER.error("Failed to list devices: %s", resp.get("msg"))
+                return []
+
+            # Response structure: result.devices (list)
+            result = resp.get("result", {})
+            if not isinstance(result, dict):
+                all_devices.extend(result)
+                break
+
+            page = result.get("devices") or []
+            all_devices.extend(page)
+            last_row_key = result.get("last_row_key")
+
+            if not result.get("has_more") or not page or not last_row_key:
+                break
 
         devices = []
         for device in all_devices:
