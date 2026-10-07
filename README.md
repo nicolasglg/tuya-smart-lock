@@ -123,6 +123,7 @@ If your lock device uses the Tuya ticket-based unlock flow, it should work. If i
 - **Cloud-only**: Tuya locks do not support local control. Commands go through the Tuya Cloud API. If your internet is down, you can still use the physical keypad/badge/fingerprint on the device itself.
 - **API trial renewal**: IoT Core and Smart Lock Open Service are free but require renewal approximately every 6 months on iot.tuya.com.
 - **Optimistic state**: Command results are shown immediately. After an unlock, the integration verifies the real cloud state once the device's configured auto-lock window has elapsed. There is no periodic polling or real-time push.
+- **Auto-lock devices**: Some Wi-Fi access-control locks never refresh `lock_motor_state` in the Tuya cloud. When `automatic_lock` is enabled on the device, the integration reports the lock as locked outside the auto-lock window. Unlocks performed outside Home Assistant (card, code, fingerprint, app) are not detected.
 
 ## Troubleshooting
 

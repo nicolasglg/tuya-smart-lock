@@ -61,7 +61,7 @@ def _load_lock_module():
     package.__path__ = [str(root)]
     sys.modules[package_name] = package
 
-    for name in ("const", "lock"):
+    for name in ("const", "tuya_api", "lock"):
         spec = importlib.util.spec_from_file_location(f"{package_name}.{name}", root / f"{name}.py")
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -204,6 +204,65 @@ class TuyaSmartLockVerificationTests(unittest.IsolatedAsyncioTestCase):
         await entity.async_will_remove_from_hass()
         self.assertTrue(scheduled["cancelled"])
         self.assertTrue(entity.base_remove_called)
+
+
+tuya_api_module = sys.modules["custom_components.tuya_smart_lock.tuya_api"]
+
+
+class StatusApi(tuya_api_module.TuyaCloudApi):
+    def __init__(self, response):
+        self.response = response
+        self.paths = []
+
+    async def _request(self, method, path, body=None):
+        self.paths.append((method, path))
+        return self.response
+
+
+def _status(**datapoints):
+    return {
+        "success": True,
+        "result": [{"code": code, "value": value} for code, value in datapoints.items()],
+    }
+
+
+class TuyaCloudApiLockStateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_auto_lock_enabled_reports_locked_despite_frozen_motor_state(self):
+        api = StatusApi(_status(automatic_lock=True, lock_motor_state=True))
+        self.assertFalse(await api.async_get_lock_state("device"))
+        self.assertEqual(api.paths, [("GET", "/v1.0/iot-03/devices/device/status")])
+
+    async def test_auto_lock_disabled_uses_motor_state(self):
+        api = StatusApi(_status(automatic_lock=False, lock_motor_state=True))
+        self.assertTrue(await api.async_get_lock_state("device"))
+
+        api = StatusApi(_status(automatic_lock=False, lock_motor_state=False))
+        self.assertFalse(await api.async_get_lock_state("device"))
+
+    async def test_missing_auto_lock_uses_motor_state(self):
+        api = StatusApi(_status(lock_motor_state=True))
+        self.assertTrue(await api.async_get_lock_state("device"))
+
+    async def test_no_state_datapoints_is_unknown(self):
+        api = StatusApi(_status(battery_state="high"))
+        self.assertIsNone(await api.async_get_lock_state("device"))
+
+    async def test_failed_status_is_unknown(self):
+        api = StatusApi({"success": False, "msg": "permission deny"})
+        self.assertIsNone(await api.async_get_lock_state("device"))
+
+    async def test_unlock_then_verification_returns_to_locked_with_auto_lock(self):
+        api = StatusApi(_status(automatic_lock=True, lock_motor_state=True))
+        api.async_unlock = FakeApi(False).async_unlock
+        entity = lock_module.TuyaSmartLock(api, "device", "Portillon", 5)
+        entity.hass = FakeHass()
+
+        await entity.async_unlock()
+        self.assertFalse(entity._attr_is_locked)
+        self.assertEqual(entity.hass.scheduled[0]["delay"], 6)
+
+        await entity._async_verify_after_auto_lock(None)
+        self.assertTrue(entity._attr_is_locked)
 
 
 if __name__ == "__main__":

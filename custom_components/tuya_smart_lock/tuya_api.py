@@ -220,7 +220,15 @@ class TuyaCloudApi:
         return True
 
     async def async_get_lock_state(self, device_id: str) -> bool | None:
-        """Get lock_motor_state. Returns True if unlocked, False if locked, None on error."""
+        """Return True if unlocked, False if locked, None when unknown.
+
+        Many Wi-Fi access-control locks (category ``mk``) never refresh
+        ``lock_motor_state`` in the cloud after pairing: the datapoint stays
+        frozen at its first reported value. When the device has automatic
+        locking enabled, the bolt is always locked outside the short
+        auto-lock window, so ``automatic_lock`` is the reliable source of
+        truth. ``lock_motor_state`` is only used when auto-lock is disabled.
+        """
         path = STATUS_ENDPOINT.format(device_id=device_id)
         resp = await self._request("GET", path)
 
@@ -228,8 +236,13 @@ class TuyaCloudApi:
             _LOGGER.error("Failed to get status: %s", resp.get("msg"))
             return None
 
-        for dp in resp.get("result", []):
-            if dp["code"] == "lock_motor_state":
-                return dp["value"]
+        values = {
+            dp.get("code"): dp.get("value")
+            for dp in resp.get("result", [])
+            if isinstance(dp, dict)
+        }
 
-        return None
+        if values.get("automatic_lock") is True:
+            return False
+
+        return values.get("lock_motor_state")
