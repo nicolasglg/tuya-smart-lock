@@ -57,6 +57,7 @@ class TuyaSmartLockConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+            description_placeholders={"iot_url": "https://iot.tuya.com"},
         )
 
     async def async_step_select_device(self, user_input: dict | None = None):
