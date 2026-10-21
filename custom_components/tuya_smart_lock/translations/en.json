@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Tuya Cloud Credentials",
-        "description": "Enter your Tuya IoT Platform credentials.\n\nYou need an active **IoT Core** and **Smart Lock Open Service** subscription on [iot.tuya.com](https://iot.tuya.com).",
+        "description": "Enter your Tuya IoT Platform credentials.\n\nYou need an active **IoT Core** and **Smart Lock Open Service** subscription on [iot.tuya.com]({iot_url}).",
         "data": {
           "access_id": "Access ID",
           "access_secret": "Access Secret",
