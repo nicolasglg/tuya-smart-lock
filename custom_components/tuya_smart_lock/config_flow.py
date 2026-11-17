@@ -12,10 +12,13 @@ from .tuya_api import TuyaCloudApi
 _LOGGER = logging.getLogger(__name__)
 
 REGIONS = {
-    "eu": "Europe",
-    "us": "Americas",
+    "eu": "Central Europe",
+    "eu_west": "Western Europe",
+    "us": "Western America",
+    "us_east": "Eastern America",
     "cn": "China",
     "in": "India",
+    "sg": "Singapore",
 }
 
 
