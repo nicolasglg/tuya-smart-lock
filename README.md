@@ -93,7 +93,7 @@ The integration uses a UI-based config flow — no YAML needed.
 
 - **Access ID**: from your Tuya IoT project overview
 - **Access Secret**: from your Tuya IoT project overview
-- **API Region**: select the region matching your Tuya data center
+- **API Region**: select the data center of your Tuya IoT project (Central Europe, Western Europe, Western America, Eastern America, China, India or Singapore). It is shown on your project overview on iot.tuya.com.
 
 ### Step 2: Select your device
 
@@ -122,8 +122,11 @@ If your lock device uses the Tuya ticket-based unlock flow, it should work. If i
 
 - **Cloud-only**: Tuya locks do not support local control. Commands go through the Tuya Cloud API. If your internet is down, you can still use the physical keypad/badge/fingerprint on the device itself.
 - **API trial renewal**: IoT Core and Smart Lock Open Service are free but require renewal approximately every 6 months on iot.tuya.com.
-- **Optimistic state**: Command results are shown immediately. After an unlock, the integration verifies the real cloud state once the device's configured auto-lock window has elapsed. There is no periodic polling or real-time push.
-- **Auto-lock devices**: Some Wi-Fi access-control locks never refresh `lock_motor_state` in the Tuya cloud. When `automatic_lock` is enabled on the device, the integration reports the lock as locked outside the auto-lock window. Unlocks performed outside Home Assistant (card, code, fingerprint, app) are not detected.
+- **Optimistic state**: Command results are shown immediately. After a command, the integration reads the real cloud state once the device's auto-lock window has elapsed. There is no periodic polling or real-time push, so unlocks performed outside Home Assistant (card, code, fingerprint, app) are not detected.
+- **How the state is read**: the lock's own `lock_motor_state` is trusted when the device reported it after the last command sent from Home Assistant. Some Wi-Fi access-control locks never refresh that datapoint; for them, when `automatic_lock` is enabled, the lock is reported as locked once the auto-lock window has passed. If the cloud cannot be read after a few retries, the state becomes `unknown` instead of keeping a stale value.
+- **Bluetooth locks behind a gateway**: commands travel cloud → gateway → Bluetooth, and the lock may need to wake up first, so the door can open several seconds (sometimes 20 s or more) after Home Assistant shows it unlocked. The Tuya app can be faster because it talks to the lock directly over your phone's Bluetooth when you are nearby.
+- **Doorbell / visitor-request locks**: some Wi-Fi video and photo locks (often `jtmspro` / `photolock`) only accept a remote unlock while a visitor request (doorbell press or live video) is active. Outside that window, the cloud ignores unlock commands. The integration cannot open that window.
+- **Remote locking**: many models only support remote unlocking. On those, the lock button has no effect and the lock re-locks itself through its own auto-lock.
 
 ## Troubleshooting
 
@@ -131,7 +134,8 @@ If your lock device uses the Tuya ticket-based unlock flow, it should work. If i
 |---------|-----|
 | `uri path invalid` on lock/unlock | Your IoT Core or Smart Lock Open Service subscription has expired. Renew it on [iot.tuya.com](https://iot.tuya.com). |
 | `permission deny` | Your Smart Life / Tuya app account is not linked to the IoT project. See Prerequisites step 2. |
-| No devices found during setup | Make sure your app account is linked and your device is a supported lock category. |
+| No devices found during setup | Make sure your app account is linked, the API Region matches your project's data center, and your device is a supported lock category. Enable debug logging for `custom_components.tuya_smart_lock` and retry: the log lists how many devices the project sees and their categories. |
+| `not support this device` on unlock | The integration automatically retries with Tuya's password-free open-door endpoint. If both are refused, your lock model does not accept cloud remote unlocking. Please open an issue with the debug log, category and model. |
 | Unlock command succeeds but door doesn't open | Enable Remote Unlock in the Tuya / Smart Life app settings for your device. |
 | `invalid_auth` during setup | Double-check your Access ID and Access Secret. Make sure you're using the credentials from the correct project. |
 

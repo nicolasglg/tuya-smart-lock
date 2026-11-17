@@ -16,6 +16,11 @@ from .const import CONF_DEVICE_ID, CONF_DEVICE_NAME, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_AUTO_LOCK_DELAY = 3
+# Seconds before retrying a state read that failed or returned nothing usable.
+STATE_RETRY_DELAY = 15
+# Follow-up reads allowed after one command, for failed reads and for
+# auto-lock devices that still report "unlocked" (late Bluetooth delivery).
+MAX_FOLLOW_UP_READS = 3
 
 
 async def async_setup_entry(
@@ -59,6 +64,7 @@ class TuyaSmartLock(LockEntity):
         self._attr_is_unlocking = False
         self._device_name = device_name
         self._cancel_verify = None
+        self._follow_up_reads = 0
 
     @property
     def device_info(self):
@@ -69,26 +75,31 @@ class TuyaSmartLock(LockEntity):
             "manufacturer": "Tuya",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Retry the initial read later if it failed while Home Assistant started."""
+        await super().async_added_to_hass()
+        if not self._attr_available:
+            self._follow_up_reads = 0
+            self._schedule_verification(STATE_RETRY_DELAY)
+
     async def async_update(self) -> None:
         """Refresh the real lock state from Tuya without periodic polling."""
-        state = await self._async_get_real_state()
-        if state is None:
-            return
-        if not isinstance(state, bool):
-            _LOGGER.warning(
-                "Ignoring invalid lock state type for %s: %s",
-                self._device_id,
-                type(state).__name__,
-            )
-            return
+        await self._async_refresh()
 
-        self._attr_is_locked = not state
+    async def _async_refresh(self):
+        """Apply a cloud reading to the entity; return it, or None when unusable."""
+        reading = await self._async_get_real_state()
+        if reading is None or not isinstance(reading.unlocked, bool):
+            return None
+
+        self._attr_is_locked = not reading.unlocked
         self._attr_available = True
+        return reading
 
     async def _async_get_real_state(self):
         """Read cloud state while converting expected transport failures to unknown."""
         try:
-            return await self._api.async_get_lock_state(self._device_id)
+            return await self._api.async_read_lock_state(self._device_id)
         except (
             aiohttp.ClientError,
             asyncio.TimeoutError,
@@ -117,6 +128,7 @@ class TuyaSmartLock(LockEntity):
             # that the physical bolt moved. Keep the prior state unavailable
             # until a targeted verification completes.
             self._attr_available = False
+            self._follow_up_reads = 0
             self._schedule_verification(5)
         self.async_write_ha_state()
 
@@ -136,6 +148,7 @@ class TuyaSmartLock(LockEntity):
         if success:
             # Verify the actual state after the device's auto-lock window instead
             # of assuming that the physical lock completed the operation.
+            self._follow_up_reads = 0
             self._schedule_verification(self._auto_lock_time + 1)
 
     def _schedule_verification(self, delay: int) -> None:
@@ -157,11 +170,34 @@ class TuyaSmartLock(LockEntity):
         await super().async_will_remove_from_hass()
 
     async def _async_verify_after_auto_lock(self, _now) -> None:
-        """Refresh the lock state after the configured auto-lock window."""
+        """Refresh the lock state after a command, retrying a bounded number of times."""
         self._cancel_verify = None
         was_available = self._attr_available
         previous_state = self._attr_is_locked
-        await self.async_update()
+        reading = await self._async_refresh()
+
+        if reading is None:
+            if self._follow_up_reads < MAX_FOLLOW_UP_READS:
+                self._follow_up_reads += 1
+                self._schedule_verification(STATE_RETRY_DELAY)
+            else:
+                # Never keep a stale optimistic state or leave the entity
+                # unavailable for good: without polling nothing else would
+                # correct it. Report an unknown state instead.
+                self._attr_available = True
+                self._attr_is_locked = None
+        elif (
+            reading.unlocked
+            and reading.reported
+            and reading.auto_lock
+            and self._follow_up_reads < MAX_FOLLOW_UP_READS
+        ):
+            # The device itself still reports "unlocked" although auto-lock is
+            # enabled: a Bluetooth lock may have received the command late, or
+            # the door did not re-lock. Read again after another auto-lock window.
+            self._follow_up_reads += 1
+            self._schedule_verification(self._auto_lock_time + 1)
+
         if self._attr_available == was_available and self._attr_is_locked == previous_state:
             return
         self.async_write_ha_state()
